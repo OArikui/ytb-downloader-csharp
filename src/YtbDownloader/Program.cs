@@ -5,6 +5,7 @@ using YtbDownloader.Config;
 using YtbDownloader.Core;
 using YtbDownloader.Logging;
 using YtbDownloader.Queue;
+using YtbDownloader.Tray;
 
 namespace YtbDownloader;
 
@@ -29,6 +30,7 @@ internal static class Program
             if (options.Error is not null)
             {
                 Console.Error.WriteLine(options.Error);
+                WaitForKeyPressIfConsoleAvailable();
                 return 2;
             }
 
@@ -52,13 +54,19 @@ internal static class Program
 
                 var backend = new YtDlpBackend();
                 var queue = new DownloadQueue(config, backend);
+                var issueRecorder = new TrayIssueRecorder(
+                    Path.Combine(appDir, "tray_issues.txt"));
+                backend.IssueRecorder = issueRecorder;
+                queue.IssueRecorder = issueRecorder;
                 var app = new App
                 {
                     BootstrapConfig = config,
                     BootstrapQueue = queue,
                 };
                 app.InitializeComponent();
-                return app.Run();
+                int exitCode = app.Run();
+                issueRecorder.Dispose();
+                return exitCode;
             }
 
             var downloadBackend = new YtDlpBackend();
@@ -129,11 +137,25 @@ internal static class Program
         catch (Exception ex)
         {
             AppLogger.Exception("処理中にエラーが発生しました。", ex);
+            WaitForKeyPressIfConsoleAvailable();
             return 1;
         }
         finally
         {
             AppLogger.Shutdown();
+        }
+    }
+
+    private static void WaitForKeyPressIfConsoleAvailable()
+    {
+        try
+        {
+            Console.WriteLine("エラーが発生しました。何かキーを押すと終了します。");
+            Console.ReadKey(true);
+        }
+        catch
+        {
+            // コンソールが接続されていない(WinExe)場合は何もしない。
         }
     }
 

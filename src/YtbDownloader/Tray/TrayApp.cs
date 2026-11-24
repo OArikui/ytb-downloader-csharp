@@ -1,3 +1,4 @@
+using System.IO;
 using System.Windows.Threading;
 using YtbDownloader.Clipboard;
 using YtbDownloader.Config;
@@ -29,7 +30,7 @@ public sealed class TrayApp : IDisposable
         _notifyIcon = new WinForms.NotifyIcon
         {
             Text = "YTB Downloader",
-            Icon = System.Drawing.SystemIcons.Application,
+            Icon = LoadTrayIcon(),
             Visible = true,
         };
         _notifyIcon.MouseUp += (_, e) =>
@@ -111,6 +112,14 @@ public sealed class TrayApp : IDisposable
         _toasts.Add(entry);
         toast.Closed += (_, _) => _toasts.Remove(entry);
         toast.Show();
+    }
+
+    private static System.Drawing.Icon LoadTrayIcon()
+    {
+        string path = Path.Combine(AppContext.BaseDirectory, "favicon.ico");
+        if (File.Exists(path))
+            return new System.Drawing.Icon(path);
+        return System.Drawing.SystemIcons.Application;
     }
 
     private void OnClipboardDownload()

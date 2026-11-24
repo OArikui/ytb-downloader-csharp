@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using YtbDownloader.Config;
 using YtbDownloader.Logging;
 using YtbDownloader.Queue;
+using YtbDownloader.Tray;
 
 namespace YtbDownloader.Core;
 
@@ -19,6 +20,9 @@ public sealed class YtDlpBackend : IDownloadBackend
         @"(?:SHA256=)?([0-9a-fA-F]{64})", RegexOptions.Compiled);
 
     private readonly MusicBrainzGenreLookup _genreLookup = new();
+
+    /// <summary> tray 実行中の問題点記録用。</summary>
+    public TrayIssueRecorder? IssueRecorder { get; set; }
 
     /// <summary>
     /// URL から動画 ID を取り出し、アーカイブ済みかどうかを確認する。
@@ -212,7 +216,8 @@ public sealed class YtDlpBackend : IDownloadBackend
             {
                 try
                 {
-                    await PostProcessAudioAsync(file, entry, config, ct).ConfigureAwait(false);
+                    await PostProcessAudioAsync(
+                        request, file, entry, config, ct).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
@@ -436,6 +441,7 @@ public sealed class YtDlpBackend : IDownloadBackend
     }
 
     private async Task PostProcessAudioAsync(
+        DownloadRequest request,
         string file,
         MediaEntry entry,
         AppConfig config,
@@ -447,14 +453,21 @@ public sealed class YtDlpBackend : IDownloadBackend
             entry.Track,
             entry.Artist);
 
+        bool missingName = string.IsNullOrWhiteSpace(naming.Track)
+            || string.IsNullOrWhiteSpace(naming.Artist);
+        string fileName = Path.GetFileName(file);
+
+        if (missingName)
+            IssueRecorder?.AddNoName(request.Url, fileName);
+
         string? genre = null;
-        if (config.GenreLookup
-            && naming.Track.Length > 0
-            && naming.Artist.Length > 0)
+        if (config.GenreLookup && !missingName)
         {
             genre = await _genreLookup
                 .LookupGenreAsync(naming.Track, naming.Artist, ct)
                 .ConfigureAwait(false);
+            if (genre is null)
+                IssueRecorder?.AddNoGenre(request.Url, fileName);
         }
 
         string? hash = null;

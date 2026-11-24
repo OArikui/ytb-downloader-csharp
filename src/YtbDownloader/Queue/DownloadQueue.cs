@@ -1,6 +1,7 @@
 using YtbDownloader.Config;
 using YtbDownloader.Core;
 using YtbDownloader.Logging;
+using YtbDownloader.Tray;
 
 namespace YtbDownloader.Queue;
 
@@ -15,6 +16,9 @@ public sealed class DownloadQueue
     private Task? _worker;
     private bool _paused;
     private DownloadRequest? _running;
+
+    /// <summary> tray 実行中の問題点記録用。</summary>
+    public TrayIssueRecorder? IssueRecorder { get; set; }
 
     public event Action<QueueStatus>? StatusChanged;
 
@@ -133,11 +137,13 @@ public sealed class DownloadQueue
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
                 item.Error = "キャンセルされました";
+                IssueRecorder?.AddFailed(item.Url, item.Title);
             }
             catch (Exception ex)
             {
                 item.Error = ex.Message;
                 AppLogger.Exception($"キューの処理に失敗しました: {item.Url}", ex);
+                IssueRecorder?.AddFailed(item.Url, item.Title);
             }
             finally
             {

@@ -2,7 +2,6 @@ using System.IO;
 using System.Text;
 using Tomlyn;
 using Tomlyn.Model;
-using YtbDownloader.Logging;
 
 namespace YtbDownloader.Config;
 
@@ -38,7 +37,7 @@ public static class ConfigLoader
         }
         else
         {
-            AppLogger.Info($"設定ファイルが見つかりません。既定値を使用します: {configPath}");
+            throw new InvalidOperationException($"設定ファイルが見つかりません: {configPath}");
         }
 
         string baseDir = Path.GetDirectoryName(configPath) ?? appDir;
