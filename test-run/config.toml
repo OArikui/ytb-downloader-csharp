@@ -1,0 +1,18 @@
+download_dir = "test_downloads"
+archive_file = "test_archive.txt"
+log_dir = "test_logs"
+
+default_mode = "audio"
+audio_format = "mp3"
+ffmpeg_location = "ffmpeg"
+yt_dlp_location = "yt-dlp"
+
+force_ipv4 = true
+subtitles = false
+thumbnails = false
+embed_metadata = true
+embed_album_art = false
+audio_bitrate = 128
+
+genre_lookup = false
+record_audio_hash = true

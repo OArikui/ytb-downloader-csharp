@@ -1,0 +1,32 @@
+<Window x:Class="YtbDownloader.Tray.ControlWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="YTB Downloader - 実行キューと入力"
+        Width="460"
+        SizeToContent="Height"
+        ResizeMode="NoResize"
+        WindowStartupLocation="Manual"
+        ShowInTaskbar="False">
+    <Grid Margin="8">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" /> <!-- status -->
+            <RowDefinition Height="Auto" /> <!-- queue -->
+            <RowDefinition Height="Auto" /> <!-- hint -->
+            <RowDefinition Height="Auto" /> <!-- input -->
+            <RowDefinition Height="Auto" /> <!-- buttons -->
+        </Grid.RowDefinitions>
+
+        <TextBlock x:Name="StatusText" Grid.Row="0" Text="待機中" Margin="0,0,0,4" TextWrapping="Wrap" />
+        <TextBlock x:Name="QueueText" Grid.Row="1" Text="(キューなし)" Margin="0,0,0,4" TextWrapping="Wrap" />
+        <TextBlock Grid.Row="2" Text="入力形式: &lt;YouTube URL&gt; [--mode audio|video]" Margin="0,0,0,4" TextWrapping="Wrap" />
+        <TextBox x:Name="InputBox" Grid.Row="3" Margin="0,0,0,6" MinWidth="420" KeyDown="InputBox_KeyDown" />
+
+        <!-- Dynamic layout: auto-width buttons -->
+        <WrapPanel Grid.Row="4" Orientation="Horizontal" VerticalAlignment="Center">
+            <Button x:Name="StackButton" Content="Stack/追加" Margin="0,0,4,0" Padding="10,4" Width="Auto" Click="StackButton_Click" />
+            <Button x:Name="RunNowButton" Content="Run now/即実行" Margin="0,0,4,0" Padding="10,4" Width="Auto" Click="RunNowButton_Click" />
+            <Button x:Name="ClearButton" Content="Clear/消去" Margin="0,0,4,0" Padding="10,4" Width="Auto" Click="ClearButton_Click" />
+            <Button x:Name="QuitButton" Content="Quit/終了" Margin="0,0,0,0" Padding="10,4" Width="Auto" Click="QuitButton_Click" />
+        </WrapPanel>
+    </Grid>
+</Window>

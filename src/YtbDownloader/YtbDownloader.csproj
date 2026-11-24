@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <AssemblyName>YtbDownloader</AssemblyName>
+    <RootNamespace>YtbDownloader</RootNamespace>
+    <StartupObject>YtbDownloader.Program</StartupObject>
+    <Version>0.1.8</Version>
+    <!-- Publish defaults; can be overridden by CLI -->
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>true</SelfContained>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- TOML config compatibility with existing config.toml -->
+    <PackageReference Include="Tomlyn" Version="2.11.1" />
+  </ItemGroup>
+</Project>

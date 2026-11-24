@@ -1,0 +1,26 @@
+2026-11-22 15:19:09 [ERROR] 処理中にエラーが発生しました。
+System.InvalidOperationException: 設定ファイルのTOML形式が不正です:E:\_library\projects\ytb-downloader-csharp\test-run\badpath.toml
+(1,23) : error : Unexpected escape character [a] in string. Only b t n f r e \ " xHH u0000-uFFFF U00000000-UFFFFFFFF are allowed
+
+ ---> Tomlyn.TomlException: (1,23) : error : Unexpected escape character [a] in string. Only b t n f r e \ " xHH u0000-uFFFF U00000000-UFFFFFFFF are allowed
+
+   at Tomlyn.Parsing.TomlParser.ParserCore.NextToken()
+   at Tomlyn.Parsing.TomlParser.ParserCore.Consume(TokenKind expected, LexerState nextState)
+   at Tomlyn.Parsing.TomlParser.ParserCore.ProducePendingKeyValueEntry()
+   at Tomlyn.Parsing.TomlParser.ParserCore.ProducePendingOperation()
+   at Tomlyn.Parsing.TomlParser.ParserCore.ProduceNext()
+   at Tomlyn.Parsing.TomlParser.ParserCore.MoveNext(TomlParseEvent& parseEvent)
+   at Tomlyn.Parsing.TomlParser.MoveNext()
+   at Tomlyn.Serialization.TomlReader.Read()
+   at Tomlyn.Serialization.Converters.TomlUntypedObjectConverter.ReadTableInto(TomlReader reader, TomlTable table)
+   at Tomlyn.Serialization.Converters.TomlUntypedObjectConverter.ReadTable(TomlReader reader)
+   at Tomlyn.Serialization.Converters.TomlTomlTableConverter.Read(TomlReader reader)
+   at Tomlyn.Serialization.Internal.TomlBuiltInTypeInfoResolver.BuiltInTomlTypeInfo`1.Read(TomlReader reader)
+   at Tomlyn.TomlTypeInfo`1.ReadAsObject(TomlReader reader)
+   at Tomlyn.TomlSerializer.DeserializeCore(TomlReader reader, TomlTypeInfo typeInfo)
+   at Tomlyn.TomlSerializer.Deserialize(String toml, TomlTypeInfo typeInfo)
+   at Tomlyn.TomlSerializer.Deserialize[T](String toml, TomlSerializerOptions options)
+   at YtbDownloader.Config.ConfigLoader.Load(String configPath, String appDir) in E:\_library\projects\ytb-downloader-csharp\src\YtbDownloader\Config\ConfigLoader.cs:line 21
+   --- End of inner exception stack trace ---
+   at YtbDownloader.Config.ConfigLoader.Load(String configPath, String appDir) in E:\_library\projects\ytb-downloader-csharp\src\YtbDownloader\Config\ConfigLoader.cs:line 35
+   at YtbDownloader.Program.Main(String[] args) in E:\_library\projects\ytb-downloader-csharp\src\YtbDownloader\Program.cs:line 36

@@ -1,0 +1,64 @@
+# YTB downloader C# 設定ファイル（Python 版と互換）
+
+# ダウンロード先
+# 相対パスは設定ファイルの配置場所を基準にする
+download_dir = "downloads"
+
+# 重複防止用の download archive
+archive_file = "archive.txt"
+
+# ログ保存先
+log_dir = "logs"
+
+# 既定のダウンロードモード
+# "video" または "audio"
+default_mode = "video"
+
+# 音声保存形式
+# "mp3"    : MP3に変換
+# "original" : 元の音声形式のまま保存
+audio_format = "mp3"
+
+# ffmpegの配置先
+# フォルダまたは実行ファイルを指定できる
+# 既定ではツール配下のffmpegフォルダ
+# Windowsの絶対パスを指定する場合は、TOMLのリテラル文字列を使う: 'E:\app\ffmpeg'
+ffmpeg_location = "ffmpeg"
+
+# yt-dlp の実行ファイル
+# PATH上の名前、アプリ配置場所からの相対パス、絶対パスを指定できる
+# 例: yt_dlp_location = 'E:\app\python313\Scripts\yt-dlp.exe'
+yt_dlp_location = "yt-dlp"
+
+# YouTubeへの接続でIPv4を強制する
+force_ipv4 = true
+
+# 字幕を保存する
+subtitles = false
+
+# サムネイルを保存する
+thumbnails = false
+
+# メタデータを埋め込む
+embed_metadata = false
+
+# サムネイルをアルバムアートとしてMP3へ埋め込む
+embed_album_art = true
+
+# MP3変換時のビットレート（kbps）
+audio_bitrate = 256
+
+# 音声の量子化ビット数（16 / 24 / 32、未指定は元のまま）
+# audio_bit_depth = 24
+
+# 音声のサンプリング周波数（Hz、未指定は元のまま）
+# audio_sample_rate = 48000
+
+# Cookieファイルのパス（将来用）
+cookies = ""
+
+# MusicBrainz でジャンルを照合する
+genre_lookup = true
+
+# 音声ストリームの SHA-256 をメタデータに記録する
+record_audio_hash = true
