@@ -1,0 +1,92 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "9.0.x"
+
+      - name: Resolve version from tag
+        shell: pwsh
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          $version = $env:TAG.TrimStart('v')
+          if ($version -notmatch '^\d+\.\d+\.\d+([-.][0-9A-Za-z.-]+)?$') {
+            throw "Unsupported tag format: $env:TAG (expected vX.Y.Z or vX.Y.Z-suffix)"
+          }
+          "VERSION=$version" >> $env:GITHUB_ENV
+          Write-Output "Building version $version"
+
+      - name: Stamp VersionInfo
+        shell: pwsh
+        run: |
+          $path = "src/YtbDownloader/VersionInfo.cs"
+          $content = Get-Content -LiteralPath $path -Raw
+          if ($content -notmatch 'AppVersion\s*=\s*"[^"]+"') {
+            throw "AppVersion not found in $path"
+          }
+          $content = $content -replace 'AppVersion\s*=\s*"[^"]+"', "AppVersion = `"$env:VERSION`""
+          Set-Content -LiteralPath $path -Value $content -NoNewline -Encoding utf8
+
+      - name: Publish self-contained single-file exe
+        shell: pwsh
+        run: |
+          dotnet publish src/YtbDownloader/YtbDownloader.csproj `
+            -c Release `
+            -r win-x64 `
+            --self-contained true `
+            -p:PublishSingleFile=true `
+            -p:Version=$env:VERSION `
+            -p:IncludeSourceRevisionInInformationalVersion=false
+          if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed ($LASTEXITCODE)" }
+
+      - name: Package release zip
+        shell: pwsh
+        run: |
+          $publishDir = "src/YtbDownloader/bin/Release/net9.0-windows/win-x64/publish"
+          $stageName = "YtbDownloader-v$env:VERSION-win-x64"
+          $stageDir = Join-Path "dist" $stageName
+          New-Item -ItemType Directory -Path $stageDir -Force | Out-Null
+
+          Copy-Item (Join-Path $publishDir "YtbDownloader.exe") $stageDir
+          Copy-Item "scripts/start-tray.bat" $stageDir
+          Copy-Item "config.example.toml" $stageDir
+          Copy-Item "README.md" $stageDir
+
+          # Fail fast if the published exe cannot even start.
+          $exe = Join-Path $stageDir "YtbDownloader.exe"
+          $proc = Start-Process -FilePath $exe -ArgumentList "--help" -Wait -PassThru
+          if ($proc.ExitCode -ne 0) {
+            throw "YtbDownloader.exe --help exited with code $($proc.ExitCode)"
+          }
+
+          $zip = Join-Path "dist" "$stageName.zip"
+          Compress-Archive -Path $stageDir -DestinationPath $zip -Force
+
+          $hash = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $stageName.zip" | Set-Content -LiteralPath "$zip.sha256" -Encoding ascii
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.zip
+            dist/*.sha256
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          prerelease: ${{ contains(github.ref_name, '-') }}

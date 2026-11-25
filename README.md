@@ -35,6 +35,28 @@ dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=
 compression 無効時は約 162.53MB でした。  
 publish 済み exe で `--version` / `--help` / 実ダウンロード / トレイ起動の動作確認済み。
 
+## リリース（CI）
+
+`v*` タグを push すると、GitHub Actions（`.github/workflows/release.yml`）が自動でビルドと同梱を行います。
+
+```powershell
+git tag v0.1.9
+git push origin v0.1.9
+```
+
+CI の処理内容:
+
+1. タグからバージョンを取得し、`VersionInfo.cs` の `AppVersion` と exe のバージョンに反映
+2. `win-x64` / self-contained / single-file で publish
+3. `YtbDownloader.exe`、`start-tray.bat`、`config.example.toml`、`README.md` を zip に同梱
+4. SHA-256 チェックサムを生成
+5. GitHub Release を作成し、zip とチェックサムを添付
+
+- 成果物: `YtbDownloader-vX.Y.Z-win-x64.zip`
+- ハイフン付きタグ（例: `v0.2.0-beta.1`）は prerelease として公開
+- `yt-dlp` / `ffmpeg` は同梱しません。PATH 上に置くか、`config.toml` の `yt_dlp_location` / `ffmpeg_location` で指定してください
+- zip 内の `start-tray.bat` は同じ階層の `YtbDownloader.exe` を起動します
+
 ## スモークテスト
 
 publish 済みの exe を起動し、一定時間クラッシュせずに動作するか確認します。

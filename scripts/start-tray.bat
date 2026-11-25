@@ -6,7 +6,9 @@ rem Usage:
 rem   start-tray.bat                 -> uses config.toml next to the exe (or defaults)
 rem   start-tray.bat PATH\config.toml -> uses the specified config file
 
-set "EXE=%~dp0..\src\YtbDownloader\bin\Release\net9.0-windows\win-x64\publish\YtbDownloader.exe"
+rem Release zip: exe sits next to this script. Dev checkout: use the publish output.
+set "EXE=%~dp0YtbDownloader.exe"
+if not exist "%EXE%" set "EXE=%~dp0..\src\YtbDownloader\bin\Release\net9.0-windows\win-x64\publish\YtbDownloader.exe"
 
 if not exist "%EXE%" (
     echo [ERROR] YtbDownloader.exe not found:
