@@ -9,7 +9,7 @@
     <AssemblyName>YtbDownloader</AssemblyName>
     <RootNamespace>YtbDownloader</RootNamespace>
     <StartupObject>YtbDownloader.Program</StartupObject>
-    <Version>0.1.8</Version>
+    <Version>0.1.9</Version>
     <ApplicationIcon>favicon.ico</ApplicationIcon>
     <!-- Publish defaults; can be overridden by CLI -->
     <PublishSingleFile>true</PublishSingleFile>

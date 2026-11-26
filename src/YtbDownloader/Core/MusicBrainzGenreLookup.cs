@@ -9,7 +9,7 @@ namespace YtbDownloader.Core;
 public sealed class MusicBrainzGenreLookup
 {
     private const string ApiBase = "https://musicbrainz.org/ws/2";
-    private const string UserAgent = "YTB-downloader/0.1.8 (MusicBrainz genre lookup)";
+    private const string UserAgent = "YTB-downloader/0.1.9 (MusicBrainz genre lookup)";
     private static readonly TimeSpan MinRequestInterval = TimeSpan.FromSeconds(1);
 
     private static readonly HttpClient Http = CreateClient();
