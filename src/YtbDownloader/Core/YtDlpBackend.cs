@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Text;
 using System.Text.Json;
@@ -19,6 +20,32 @@ public sealed class YtDlpBackend : IDownloadBackend
     private static readonly Regex StreamHashPattern = new(
         @"(?:SHA256=)?([0-9a-fA-F]{64})", RegexOptions.Compiled);
 
+    // yt-dlp の進捗行 (例: [download]  45.2% of 10.00MiB at  1.20MiB/s ETA 00:12)
+    private static readonly Regex ProgressPattern = new(
+        @"\[download\]\s+(?<pct>\d+(?:\.\d+)?)%(?:\s+of\s+(?:~\s+)?[\d.]+\s*[KMGTPE]?i?B)?(?:\s+at\s+(?<speed>\S+))?(?:\s+ETA\s+(?<eta>\S+))?",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    // パイプラインが使用するオプションは上書きを許可しない。
+    private static readonly HashSet<string> ReservedOptions = new(
+        new[]
+        {
+            "o", "output", "print", "download-archive", "ignore-config",
+            "newline", "progress", "no-progress", "continue",
+            "dump-single-json", "skip-download", "flat-playlist",
+            "ffmpeg-location", "source-address",
+        },
+        StringComparer.OrdinalIgnoreCase);
+
+    // 情報取得(JSON)の段階では、一覧表示系のオプションは JSON を壊すため除外する。
+    private static readonly HashSet<string> NonJsonActions = new(
+        new[]
+        {
+            "F", "list-formats", "list-subs", "list-thumbnails", "simulate",
+            "get-url", "get-title", "get-id", "get-description",
+            "get-duration", "get-thumbnail", "get-webpage-url", "print-to-file",
+        },
+        StringComparer.OrdinalIgnoreCase);
+
     private readonly MusicBrainzGenreLookup _genreLookup = new();
 
     /// <summary> tray 実行中の問題点記録用。</summary>
@@ -32,10 +59,79 @@ public sealed class YtDlpBackend : IDownloadBackend
     public static bool IsArchivedUrl(string url, AppConfig config) =>
         ArchiveContains(config, VideoIdFromUrl(url));
 
+    /// <summary>
+    /// ダウンロードせずにタイトル/種別を取得する。キューの全タスクに対して
+    /// ダウンロードワーカーとは別に実行され、表示と割り込み判定に使われる。
+    /// audio モードでは Python 版 build_audio_name 相当の曲名を確定する。
+    /// </summary>
+    public async Task<DownloadInfo> ProbeAsync(
+        DownloadRequest request,
+        AppConfig config,
+        CancellationToken ct = default)
+    {
+        var arguments = new List<string>
+        {
+            "--ignore-config",
+            "--dump-single-json",
+            "--skip-download",
+            "--no-progress",
+            "--flat-playlist",
+        };
+        if (config.ForceIpv4)
+        {
+            arguments.Add("--source-address");
+            arguments.Add("0.0.0.0");
+        }
+        arguments.AddRange(FilterInfoArgs(request.ExtraArgs));
+        arguments.Add(request.Url);
+
+        try
+        {
+            ProcessResult result = await RunProcessAsync(
+                    ResolveYtDlp(config), arguments, progressCallback: null, ct: ct)
+                .ConfigureAwait(false);
+            if (result.ExitCode != 0 || string.IsNullOrWhiteSpace(result.Stdout))
+                return new DownloadInfo(null, null, null);
+
+            using JsonDocument document = JsonDocument.Parse(result.Stdout);
+            JsonElement root = document.RootElement;
+            string type = GetString(root, "_type");
+            bool isPlaylist = type is "playlist" or "multi_video"
+                || root.TryGetProperty("entries", out _);
+            string title = GetString(root, "title");
+            string uploader = GetString(root, "uploader");
+            string id = GetString(root, "id");
+
+            if (isPlaylist)
+                return new DownloadInfo("list", title, id, uploader);
+
+            string? track = GetStringOrNull(root, "track");
+            string? artist = GetStringOrNull(root, "artist")
+                ?? GetStringOrNull(root, "artists");
+            string? resolved = request.Mode == "audio"
+                ? NamingService.BuildAudioName(title, uploader, track, artist).Filename
+                : null;
+            return new DownloadInfo(
+                "single",
+                resolved ?? title,
+                id,
+                uploader,
+                track,
+                artist,
+                resolved);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            AppLogger.Warn($"タイトル情報の取得に失敗しました: {request.Url}: {ex.Message}");
+            return new DownloadInfo(null, null, null);
+        }
+    }
+
     public async Task DownloadAsync(
         DownloadRequest request,
         AppConfig config,
         Action<DownloadInfo>? infoCallback,
+        Action<DownloadProgress>? progressCallback = null,
         CancellationToken ct = default)
     {
         if (request.Mode is not ("video" or "audio"))
@@ -51,9 +147,11 @@ public sealed class YtDlpBackend : IDownloadBackend
         AppLogger.Info($"URL: {request.Url}");
         AppLogger.Info($"モード: {request.Mode}");
         AppLogger.Info($"IPv4固定: {(config.ForceIpv4 ? "有効" : "無効")}");
+        IReadOnlyList<string> extraArgs = FilterExtraArgs(request.ExtraArgs);
 
         (string? playlistItem, string downloadUrl) = ResolvePlaylistItemSelection(request.Url);
-        ExtractionResult extraction = await ExtractAsync(downloadUrl, playlistItem, config, ct)
+        ExtractionResult extraction = await ExtractAsync(
+                downloadUrl, playlistItem, config, extraArgs, ct)
             .ConfigureAwait(false);
 
         int? playlistTotal = extraction.PlaylistCount
@@ -71,7 +169,8 @@ public sealed class YtDlpBackend : IDownloadBackend
                 "単体動画としてダウンロードします。");
             playlistItem = null;
             downloadUrl = SingleVideoUrl(request.Url);
-            extraction = await ExtractAsync(downloadUrl, null, config, ct).ConfigureAwait(false);
+            extraction = await ExtractAsync(downloadUrl, null, config, extraArgs, ct)
+                .ConfigureAwait(false);
         }
 
         if (extraction.IsPlaylist && extraction.Entries.Count == 0)
@@ -117,10 +216,27 @@ public sealed class YtDlpBackend : IDownloadBackend
             }
         }
 
+        // audio モードでは Python 版と同じ曲名をダウンロード前に確定させる。
+        string? resolvedAudioTitle = null;
+        if (request.Mode == "audio" && selectedEntry is not null)
+        {
+            resolvedAudioTitle = NamingService.BuildAudioName(
+                selectedEntry.Title,
+                selectedEntry.Uploader,
+                selectedEntry.Track,
+                selectedEntry.Artist).Filename;
+        }
+        if (request.Mode == "audio")
+            request.ResolvedTitle = resolvedAudioTitle;
+
         infoCallback?.Invoke(new DownloadInfo(
             extraction.IsPlaylist ? "list" : "single",
-            extraction.Title,
-            VideoIdFromUrl(downloadUrl) ?? extraction.Id));
+            resolvedAudioTitle ?? extraction.Title,
+            VideoIdFromUrl(downloadUrl) ?? extraction.Id,
+            selectedEntry?.Uploader,
+            selectedEntry?.Track,
+            selectedEntry?.Artist,
+            resolvedAudioTitle));
 
         string outputDir = extraction.IsPlaylist
             ? Path.Combine(
@@ -134,10 +250,13 @@ public sealed class YtDlpBackend : IDownloadBackend
             config,
             request.Mode,
             outputDir,
-            playlistItem);
+            playlistItem,
+            resolvedAudioTitle,
+            extraArgs);
         arguments.Add(downloadUrl);
 
-        ProcessResult result = await RunProcessAsync(ResolveYtDlp(config), arguments, ct)
+        ProcessResult result = await RunProcessAsync(
+                ResolveYtDlp(config), arguments, progressCallback, ct)
             .ConfigureAwait(false);
         if (result.ExitCode != 0)
         {
@@ -167,14 +286,18 @@ public sealed class YtDlpBackend : IDownloadBackend
 
         for (int i = 0; i < result.Files.Count; i++)
         {
-            string file = result.Files[i];
+            string file = result.Files[i].Path;
             if (!File.Exists(file))
             {
                 AppLogger.Warn($"ダウンロードファイルが見つかりません: {file}");
                 continue;
             }
 
-            string id = VideoIdFromFileName(file);
+            // audio モードではテンプレートに ID を含めないため、
+            // --print 出力の ID を優先してエントリを対応付ける。
+            string id = result.Files[i].Id;
+            if (string.IsNullOrEmpty(id))
+                id = VideoIdFromFileName(file);
             MediaEntry? entry = null;
             if (id.Length > 0)
                 entriesById.TryGetValue(id, out entry);
@@ -235,8 +358,19 @@ public sealed class YtDlpBackend : IDownloadBackend
         AppConfig config,
         string mode,
         string outputDir,
-        string? playlistItem)
+        string? playlistItem,
+        string? audioTitle,
+        IReadOnlyList<string> extraArgs)
     {
+        // Python 版は audio モードで "曲名 - アーティスト.拡張子" を
+        // テンプレートに直接渡す。C# 版も ID なしテンプレートに合わせ、
+        // 必要な場合のみ後でリネームする。
+        string extensionTemplate = mode == "audio"
+            ? (string.IsNullOrWhiteSpace(audioTitle)
+                ? "%(title)s.%(ext)s"
+                : NamingService.SanitizeFilename(audioTitle) + ".%(ext)s")
+            : "%(title)s [%(id)s].%(ext)s";
+
         var arguments = new List<string>
         {
             "--ignore-config",
@@ -246,8 +380,8 @@ public sealed class YtDlpBackend : IDownloadBackend
             "--retries", "3",
             "--fragment-retries", "3",
             "--download-archive", config.ArchiveFile,
-            "-o", Path.Combine(outputDir, "%(title)s [%(id)s].%(ext)s"),
-            "--print", "after_move:FILE:%(filepath)s",
+            "-o", Path.Combine(outputDir, extensionTemplate),
+            "--print", "after_move:FILE:%(id)s|%(filepath)s",
         };
 
         if (config.ForceIpv4)
@@ -326,6 +460,8 @@ public sealed class YtDlpBackend : IDownloadBackend
             }
         }
 
+        arguments.AddRange(extraArgs);
+
         if (playlistItem is not null)
         {
             arguments.Add("--playlist-items");
@@ -339,6 +475,7 @@ public sealed class YtDlpBackend : IDownloadBackend
         string url,
         string? playlistItem,
         AppConfig config,
+        IReadOnlyList<string> extraArgs,
         CancellationToken ct)
     {
         var arguments = new List<string>
@@ -355,6 +492,7 @@ public sealed class YtDlpBackend : IDownloadBackend
             arguments.Add("0.0.0.0");
         }
 
+        arguments.AddRange(FilterInfoArgs(extraArgs));
         if (playlistItem is not null)
         {
             arguments.Add("--playlist-items");
@@ -363,7 +501,8 @@ public sealed class YtDlpBackend : IDownloadBackend
 
         arguments.Add(url);
 
-        ProcessResult result = await RunProcessAsync(ResolveYtDlp(config), arguments, ct)
+        ProcessResult result = await RunProcessAsync(
+                ResolveYtDlp(config), arguments, progressCallback: null, ct: ct)
             .ConfigureAwait(false);
         if (result.ExitCode != 0)
         {
@@ -466,6 +605,9 @@ public sealed class YtDlpBackend : IDownloadBackend
             genre = await _genreLookup
                 .LookupGenreAsync(naming.Track, naming.Artist, ct)
                 .ConfigureAwait(false);
+            // "Music" はジャンルとして意味を成さないため、取得できなかったものとして扱う。
+            if (string.Equals(genre, "Music", StringComparison.OrdinalIgnoreCase))
+                genre = null;
             if (genre is null)
                 IssueRecorder?.AddNoGenre(request.Url, fileName);
         }
@@ -518,7 +660,8 @@ public sealed class YtDlpBackend : IDownloadBackend
             "-",
         };
 
-        ProcessResult result = await RunProcessAsync(ffmpeg, arguments, ct).ConfigureAwait(false);
+        ProcessResult result = await RunProcessAsync(ffmpeg, arguments, null, ct)
+            .ConfigureAwait(false);
         if (result.ExitCode != 0)
         {
             AppLogger.Warn(
@@ -565,7 +708,7 @@ public sealed class YtDlpBackend : IDownloadBackend
 
         try
         {
-            ProcessResult result = await RunProcessAsync(ffmpeg, arguments, ct)
+            ProcessResult result = await RunProcessAsync(ffmpeg, arguments, null, ct)
                 .ConfigureAwait(false);
             if (result.ExitCode != 0)
             {
@@ -850,6 +993,7 @@ public sealed class YtDlpBackend : IDownloadBackend
     private static async Task<ProcessResult> RunProcessAsync(
         string fileName,
         IReadOnlyList<string> arguments,
+        Action<DownloadProgress>? progressCallback,
         CancellationToken ct)
     {
         var startInfo = new ProcessStartInfo
@@ -868,7 +1012,7 @@ public sealed class YtDlpBackend : IDownloadBackend
         using var process = new Process { StartInfo = startInfo };
         var stdout = new StringBuilder();
         var stderr = new StringBuilder();
-        var files = new List<string>();
+        var files = new List<(string Id, string Path)>();
 
         process.OutputDataReceived += (_, eventArgs) =>
         {
@@ -878,12 +1022,19 @@ public sealed class YtDlpBackend : IDownloadBackend
             stdout.AppendLine(eventArgs.Data);
             if (eventArgs.Data.StartsWith("FILE:", StringComparison.Ordinal))
             {
-                files.Add(eventArgs.Data[5..].Trim());
+                string payload = eventArgs.Data[5..].Trim();
+                int separator = payload.IndexOf('|');
+                files.Add(separator >= 0
+                    ? (payload[..separator].Trim(), payload[(separator + 1)..].Trim())
+                    : ("", payload));
             }
             else if (eventArgs.Data.Contains("[download]", StringComparison.Ordinal)
                      && eventArgs.Data.Contains('%'))
             {
                 AppLogger.Info(eventArgs.Data.Trim());
+                DownloadProgress? progress = ParseProgress(eventArgs.Data);
+                if (progress is not null)
+                    progressCallback?.Invoke(progress);
             }
         };
 
@@ -975,6 +1126,84 @@ public sealed class YtDlpBackend : IDownloadBackend
         return null;
     }
 
+    private static IReadOnlyList<string> FilterInfoArgs(IReadOnlyList<string> extraArgs)
+    {
+        IReadOnlyList<string> filtered = FilterExtraArgs(extraArgs);
+        var result = new List<string>();
+        for (int i = 0; i < filtered.Count; i++)
+        {
+            string token = filtered[i];
+            string name = token.TrimStart('-');
+            int equals = name.IndexOf('=');
+            if (equals >= 0)
+                name = name[..equals];
+
+            if (NonJsonActions.Contains(name))
+            {
+                if (equals < 0 && i + 1 < filtered.Count
+                    && !filtered[i + 1].StartsWith("-", StringComparison.Ordinal))
+                {
+                    i++;
+                }
+                continue;
+            }
+
+            result.Add(token);
+        }
+        return result;
+    }
+
+    private static DownloadProgress? ParseProgress(string line)
+    {
+        Match match = ProgressPattern.Match(line);
+        if (!match.Success)
+            return null;
+
+        double? percent = double.TryParse(
+            match.Groups["pct"].Value,
+            NumberStyles.Float,
+            CultureInfo.InvariantCulture,
+            out double parsed)
+                ? parsed
+                : null;
+        string speed = match.Groups["speed"].Success ? match.Groups["speed"].Value : "";
+        string eta = match.Groups["eta"].Success ? match.Groups["eta"].Value : "";
+        return new DownloadProgress(
+            percent,
+            speed.Length > 0 ? speed : null,
+            eta.Length > 0 ? eta : null);
+    }
+
+    /// <summary>
+    /// トレイ入力から渡された yt-dlp オプションのうち、内部的に
+    /// 使用中で上書きすると動作が壊れるものだけを取り除く。
+    /// </summary>
+    private static IReadOnlyList<string> FilterExtraArgs(IReadOnlyList<string> extraArgs)
+    {
+        var result = new List<string>();
+        for (int i = 0; i < extraArgs.Count; i++)
+        {
+            string token = extraArgs[i];
+            string name = token.TrimStart('-');
+            int equals = name.IndexOf('=');
+            if (equals >= 0)
+                name = name[..equals];
+
+            if (ReservedOptions.Contains(name))
+            {
+                if (equals < 0 && i + 1 < extraArgs.Count
+                    && !extraArgs[i + 1].StartsWith("-", StringComparison.Ordinal))
+                {
+                    i++;
+                }
+                continue;
+            }
+
+            result.Add(token);
+        }
+        return result;
+    }
+
     private static void Log403Diagnostics(string stderr, AppConfig config)
     {
         if (!stderr.Contains("HTTP Error 403", StringComparison.OrdinalIgnoreCase))
@@ -1018,5 +1247,5 @@ public sealed class YtDlpBackend : IDownloadBackend
         int ExitCode,
         string Stdout,
         string Stderr,
-        List<string> Files);
+        List<(string Id, string Path)> Files);
 }

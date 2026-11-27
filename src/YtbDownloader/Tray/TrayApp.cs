@@ -7,22 +7,34 @@ using WinForms = System.Windows.Forms;
 
 namespace YtbDownloader.Tray;
 
+/// <summary>トレイの入力欄を解析した結果。</summary>
+public sealed record TrayInput(
+    string? Url,
+    string? Mode,
+    IReadOnlyList<string> ExtraArgs);
+
 public sealed class TrayApp : IDisposable
 {
     private readonly AppConfig _config;
     private readonly DownloadQueue _queue;
     private readonly Dispatcher _dispatcher;
+    private readonly IReadOnlyList<string> _defaultExtraArgs;
     private readonly List<(ToastWindow Toast, DownloadRequest? Request)> _toasts = [];
     private WinForms.NotifyIcon? _notifyIcon;
     private ControlWindow? _controlWindow;
     private Action<QueueStatus>? _statusHandler;
     private bool _disposed;
 
-    public TrayApp(AppConfig config, DownloadQueue queue, Dispatcher dispatcher)
+    public TrayApp(
+        AppConfig config,
+        DownloadQueue queue,
+        Dispatcher dispatcher,
+        IReadOnlyList<string>? defaultExtraArgs = null)
     {
         _config = config;
         _queue = queue;
         _dispatcher = dispatcher;
+        _defaultExtraArgs = defaultExtraArgs ?? [];
     }
 
     public void Start()
@@ -53,39 +65,78 @@ public sealed class TrayApp : IDisposable
 
     public void EnqueueFromInput(string text, int priority = 0)
     {
-        var (url, mode) = ParseStackedInput(text);
-        if (url is null)
+        TrayInput input = ParseStackedInput(text);
+        if (input.Url is null)
         {
             ShowToast("YouTube URLを入力してください。");
             return;
         }
-        var req = _queue.Enqueue(url, mode ?? _config.DefaultMode, priority);
+
+        var extraArgs = new List<string>(_defaultExtraArgs);
+        extraArgs.AddRange(input.ExtraArgs);
+        var req = _queue.Enqueue(
+            input.Url,
+            input.Mode ?? _config.DefaultMode,
+            priority,
+            extraArgs);
         string label = priority > 0 ? "即実行しました" : "スタックしました";
         ShowToast($"{label}: {DownloadRequest.Describe(req)}", req);
     }
 
-    public static (string? Url, string? Mode) ParseStackedInput(string text)
+    /// <summary>
+    /// 入力形式: &lt;YouTube URL&gt; [--mode audio|video|--audio|--video]
+    /// [--yt-dlpオプション ...]
+    /// --mode / --audio / --video 以外のオプションは yt-dlp へそのまま渡す。
+    /// </summary>
+    public static TrayInput ParseStackedInput(string text)
     {
         string? url = ClipboardHelper.FindYoutubeUrl(text);
-        if (url is null) return (null, null);
+        if (url is null) return new TrayInput(null, null, []);
 
         string? mode = null;
+        var extraArgs = new List<string>();
         string[] tokens = text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
         for (int i = 0; i < tokens.Length; i++)
         {
-            if (tokens[i] == "--mode")
+            string token = tokens[i];
+            if (string.Equals(token, url, StringComparison.Ordinal))
+                continue;
+
+            if (token == "--mode")
             {
                 if (i + 1 < tokens.Length && tokens[i + 1] is "audio" or "video")
-                    mode = tokens[i + 1];
+                    mode = tokens[++i];
+                continue;
             }
-            else if (tokens[i].StartsWith("--mode=", StringComparison.Ordinal))
+            if (token.StartsWith("--mode=", StringComparison.Ordinal))
             {
-                string value = tokens[i]["--mode=".Length..];
+                string value = token["--mode=".Length..];
                 if (value is "audio" or "video") mode = value;
+                continue;
+            }
+            if (token is "--audio" or "--video")
+            {
+                mode = token == "--audio" ? "audio" : "video";
+                continue;
+            }
+
+            if (!token.StartsWith("-", StringComparison.Ordinal))
+                continue;
+
+            extraArgs.Add(token);
+            // --proxy URL や --playlist-items 1-3 のような値を持つオプション。
+            if (!token.Contains('=')
+                && i + 1 < tokens.Length)
+            {
+                string next = tokens[i + 1];
+                bool isValue = !next.StartsWith("-", StringComparison.Ordinal)
+                    && !string.Equals(next, url, StringComparison.Ordinal);
+                if (isValue)
+                    extraArgs.Add(tokens[++i]);
             }
         }
 
-        return (url, mode);
+        return new TrayInput(url, mode, extraArgs);
     }
 
     public void ClearQueue()
@@ -133,6 +184,23 @@ public sealed class TrayApp : IDisposable
         EnqueueFromInput(text ?? "");
     }
 
+    /// <summary>実行中項目の進捗・速度を含む表示文字列。</summary>
+    public static string DescribeRunning(DownloadRequest req)
+    {
+        string text = DownloadRequest.Describe(req);
+        if (req.Progress is null)
+            return text;
+
+        var parts = new List<string>();
+        if (req.Progress.Percent is double percent)
+            parts.Add($"{percent:F1}%");
+        if (!string.IsNullOrEmpty(req.Progress.Speed))
+            parts.Add(req.Progress.Speed);
+        if (!string.IsNullOrEmpty(req.Progress.Eta))
+            parts.Add($"ETA {req.Progress.Eta}");
+        return parts.Count > 0 ? $"{text} | {string.Join(" ", parts)}" : text;
+    }
+
     private void ApplyStatus(QueueStatus status)
     {
         _controlWindow?.RefreshStatus(status);
@@ -142,7 +210,7 @@ public sealed class TrayApp : IDisposable
             foreach ((ToastWindow toast, DownloadRequest? request) in _toasts)
             {
                 if (ReferenceEquals(request, status.Running))
-                    toast.Update($"実行中: {DownloadRequest.Describe(status.Running)}");
+                    toast.Update($"実行中: {DescribeRunning(status.Running)}");
             }
         }
 
@@ -150,7 +218,8 @@ public sealed class TrayApp : IDisposable
             return;
 
         string tip = status.Running is not null
-            ? $"YTB Downloader: {DownloadRequest.Describe(status.Running)}"
+            ? $"YTB Downloader: {DescribeRunning(status.Running)} " +
+              $"[{status.CompletedCount}完了/{status.Queued.Count}待ち]"
             : status.Queued.Count > 0
                 ? $"YTB Downloader: キュー済み({status.Queued.Count}件)"
                 : "YTB Downloader";

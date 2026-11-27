@@ -42,6 +42,15 @@
 | Config | 完了 | Tomlyn による TOML 読込、パス解決、型/値検証、`yt_dlp_location` 追加 |
 | Main/CLI | 完了 | URL/--mode/--config/--linklist/--tray、env URL、linklist 集計終了コード |
 
+### 追加対応（2026-11-27）
+
+| 対応 | 内容 |
+|---|---|
+| 問題一覧 | MusicBrainz が返す `Music` をジャンル不明として扱い、`tray_issues.txt` の `[3]` に記録する。 |
+| audio 優先 | audio モードでは情報取得時に Python 版 `build_audio_name` 相当の曲名を確定し、キュー表示と保存ファイル名に使用。yt-dlp のテンプレートも ID なしに統一。 |
+| オプション透過 | トレイ入力 / `--tray` 起動時の未知の long option を yt-dlp へ渡す（内部使用オプションは除外）。`--audio` / `--video` の短縮形も対応。 |
+| キュー | 全タスクのタイトルを先行取得、`Kind` により単動画をプレイリストより優先。完了/待ち件数・進捗・速度を表示し、一覧は index 付きスクロール表示。 |
+
 ## 想定ディレクトリ構成
 
 ```text

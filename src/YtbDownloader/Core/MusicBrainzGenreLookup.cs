@@ -187,6 +187,14 @@ public sealed class MusicBrainzGenreLookup
         return null;
     }
 
+    /// <summary>
+    /// ジャンルとして意味を成さない汎用名。Python 版の実データで
+    /// MusicBrainz の "Music" が最上位に来ることがあるため除外する。
+    /// 除外された場合、他に候補がなければ「ジャンル不明」として記録される。
+    /// </summary>
+    private static bool IsMeaninglessGenre(string name) =>
+        string.Equals(name.Trim(), "Music", StringComparison.OrdinalIgnoreCase);
+
     private static List<string> SortedGenres(JsonElement element, string property)
     {
         if (!element.TryGetProperty(property, out JsonElement items)
@@ -213,7 +221,11 @@ public sealed class MusicBrainzGenreLookup
                 count = parsed;
             }
 
-            values.Add((name.GetString() ?? "", count));
+            string genreName = name.GetString() ?? "";
+            if (IsMeaninglessGenre(genreName))
+                continue;
+
+            values.Add((genreName, count));
         }
 
         values.Sort((a, b) => b.Count.CompareTo(a.Count));

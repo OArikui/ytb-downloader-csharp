@@ -62,6 +62,7 @@ internal static class Program
                 {
                     BootstrapConfig = config,
                     BootstrapQueue = queue,
+                    BootstrapExtraArgs = options.ExtraArgs,
                 };
                 app.InitializeComponent();
                 int exitCode = app.Run();
@@ -176,8 +177,8 @@ internal static class Program
             request,
             config,
             info => AppLogger.Info(
-                $"情報: {info.Kind ?? "unknown"} | {info.Title} [{info.VideoId}]"),
-            CancellationToken.None).GetAwaiter().GetResult();
+                $"情報: {info.Kind ?? "unknown"} | {info.ResolvedTitle ?? info.Title} [{info.VideoId}]"),
+            ct: CancellationToken.None).GetAwaiter().GetResult();
 
         return request;
     }

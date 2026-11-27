@@ -8,6 +8,7 @@ public partial class ControlWindow : Window
 {
     private readonly TrayApp _app;
     private bool _allowClose;
+    private string? _lastQueueSignature;
 
     public ControlWindow(TrayApp app)
     {
@@ -18,22 +19,28 @@ public partial class ControlWindow : Window
 
     public void RefreshStatus(QueueStatus status)
     {
-        StatusText.Text = status.Running is not null
-            ? $"実行中: {DownloadRequest.Describe(status.Running)}"
-            : status.Queued.Count > 0 ? $"待機中({status.Queued.Count}件)" : "待機中";
+        int total = status.CompletedCount
+            + status.Queued.Count
+            + (status.Running is not null ? 1 : 0);
+        string progress = status.Running is not null
+            ? $"実行中 ({status.CompletedCount}/{total}完了, 待ち {status.Queued.Count}): " +
+              TrayApp.DescribeRunning(status.Running)
+            : $"待機中 (待ち {status.Queued.Count}件, 完了 {status.CompletedCount}件)";
+        StatusText.Text = status.Paused ? progress + " [一時停止]" : progress;
 
-        if (status.Queued.Count == 0)
+        var items = status.Queued.Count == 0
+            ? new[] { "(キューなし)" }
+            : status.Queued
+                .Select((item, index) => $"{index + 1}. {DownloadRequest.Describe(item)}")
+                .ToArray();
+
+        // 進捗更新ではキュー内容は変わらないため、再バインドしてスクロール位置を
+        // リセットしないようにする。
+        string signature = string.Join("\n", items);
+        if (signature != _lastQueueSignature)
         {
-            QueueText.Text = "(キューなし)";
-        }
-        else
-        {
-            var lines = status.Queued
-                .Select(x => $"- {DownloadRequest.Describe(x)}")
-                .ToList();
-            if (lines.Count > 8)
-                lines = [$"... 他{lines.Count - 8}件", .. lines.TakeLast(8)];
-            QueueText.Text = string.Join(Environment.NewLine, lines);
+            _lastQueueSignature = signature;
+            QueueList.ItemsSource = items;
         }
 
         PositionNearBottomRight();

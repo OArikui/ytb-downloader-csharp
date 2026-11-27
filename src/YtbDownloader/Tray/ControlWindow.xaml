@@ -17,8 +17,23 @@
         </Grid.RowDefinitions>
 
         <TextBlock x:Name="StatusText" Grid.Row="0" Text="待機中" Margin="0,0,0,4" TextWrapping="Wrap" />
-        <TextBlock x:Name="QueueText" Grid.Row="1" Text="(キューなし)" Margin="0,0,0,4" TextWrapping="Wrap" />
-        <TextBlock Grid.Row="2" Text="入力形式: &lt;YouTube URL&gt; [--mode audio|video]" Margin="0,0,0,4" TextWrapping="Wrap" />
+
+        <!-- 件数が多くても見やすいよう、index 付きでスクロール表示する。 -->
+        <ListBox x:Name="QueueList" Grid.Row="1" Margin="0,0,0,4"
+                 MinHeight="24" MaxHeight="160"
+                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                 BorderThickness="1">
+            <ListBox.ItemTemplate>
+                <DataTemplate>
+                    <TextBlock Text="{Binding}" TextWrapping="Wrap" />
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+
+        <TextBlock Grid.Row="2"
+                   Text="入力形式: &lt;YouTube URL&gt; [--mode audio|video|--audio|--video] [--yt-dlp options]"
+                   Margin="0,0,0,4" TextWrapping="Wrap" />
         <TextBox x:Name="InputBox" Grid.Row="3" Margin="0,0,0,6" MinWidth="420" KeyDown="InputBox_KeyDown" />
 
         <!-- Dynamic layout: auto-width buttons -->

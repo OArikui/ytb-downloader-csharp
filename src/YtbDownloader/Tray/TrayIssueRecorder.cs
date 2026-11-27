@@ -8,6 +8,7 @@ namespace YtbDownloader.Tray;
 /// tray 実行中のダウンロードの問題点を記録する。
 /// [1] ダウンロード失敗、[2] 音楽(アーティスト・曲名不明)、[3] ジャンル不明を、
 /// リンクとファイル名の一覧として保存する。
+/// [3] には MusicBrainz の "Music" のようにジャンルとして意味を成さない値も含める。
 /// 重複は認めず、1と2・3は重複しないが、2と3は重複してよい。
 /// </summary>
 public sealed class TrayIssueRecorder : IDisposable

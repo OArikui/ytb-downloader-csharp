@@ -71,11 +71,11 @@ powershell -ExecutionPolicy Bypass -File .\scripts\smoke-test.ps1
 |---|---|
 | Queue | 実装済み（FIFO/priority/pause/resume/status、archive skip、例外継続） |
 | Clipboard | 実装済み（YouTube URL 抽出、末尾句読点除去） |
-| Core | 実装済み（yt-dlp 実行、playlist/index、命名、メタデータ、MusicBrainz、音声ハッシュ、403 診断） |
-| TrayApp + ControlWindow | 実装済み（NotifyIcon、左クリック clipboard、右クリック制御ウィンドウ、動的レイアウト、ボタン自動幅） |
+| Core | 実装済み（yt-dlp 実行、playlist/index、Python 版準拠の audio 命名、メタデータ、MusicBrainz、音声ハッシュ、403 診断） |
+| TrayApp + ControlWindow | 実装済み（NotifyIcon、タイトル先行取得、単動画の優先実行、件数/進捗/速度表示、index 付きスクロール一覧、yt-dlp オプション透過） |
 | ToastWindow | 実装済み（自動 dismiss、実行中更新、ControlWindow 上に配置） |
 | Config | 実装済み（Tomlyn による TOML 読込、パス解決、型/値検証） |
-| Main/CLI | 実装済み（URL/--mode/--config/--linklist/--tray、env URL、アーカイブ事前スキップ、集計終了コード） |
+| Main/CLI | 実装済み（URL/--mode/--config/--linklist/--tray、env URL、アーカイブ事前スキップ、集計終了コード、トレイ起動時の yt-dlp オプション透過） |
 
 ## 使い方
 
@@ -95,6 +95,25 @@ powershell -ExecutionPolicy Bypass -File .\scripts\smoke-test.ps1
 ```powershell
 .\scripts\start-tray.bat
 .\scripts\start-tray.bat PATH\config.toml   # 設定ファイルを明示指定する場合
+```
+
+### トレイのキュー
+
+- キューに追加すると、ダウンロードとは別にタイトルを先行取得し、タイトルで表示します。
+- プレイリストと単動画を区別し、待機中の単動画はプレイリストより先に処理します（実行中の項目は完了してから切り替わります）。
+- 実行中項目の進捗率・速度・ETA と、完了/待ち件数を表示します。
+- キュー一覧は index 付きでスクロールできるため、大量に積んでも見やすくなっています。
+- `tray_issues.txt` には失敗・曲名不明・ジャンル不明を記録します。MusicBrainz の `Music` はジャンルとして意味を成さないため、ジャンル不明として記録します。
+
+### トレイ入力のオプション
+
+入力形式は `<YouTube URL> [--mode audio|video|--audio|--video] [--yt-dlp options]` です。
+`--mode` / `--audio` / `--video` 以外のオプション（`--list-formats` や `--proxy URL` など）は
+yt-dlp へそのまま渡されます。起動時に渡した未知の long option も、トレイの全タスクに適用されます。
+なお、出力先やアーカイブなど内部で使用するオプションは上書きされないよう除外されます。
+
+```powershell
+.\YtbDownloader.exe --tray --proxy http://proxy.example:8080
 ```
 
 `config.toml` は実行ファイルと同じディレクトリに置きます。`--config` で明示指定も可能です。

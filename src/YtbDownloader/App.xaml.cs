@@ -9,6 +9,7 @@ public partial class App : System.Windows.Application
 {
     public AppConfig? BootstrapConfig { get; init; }
     public DownloadQueue? BootstrapQueue { get; init; }
+    public IReadOnlyList<string> BootstrapExtraArgs { get; init; } = [];
 
     private TrayApp? _trayApp;
 
@@ -18,7 +19,8 @@ public partial class App : System.Windows.Application
 
         if (BootstrapConfig is not null && BootstrapQueue is not null)
         {
-            _trayApp = new TrayApp(BootstrapConfig, BootstrapQueue, Dispatcher);
+            _trayApp = new TrayApp(
+                BootstrapConfig, BootstrapQueue, Dispatcher, BootstrapExtraArgs);
             _trayApp.Start();
         }
     }
